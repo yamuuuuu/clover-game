@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>네잎클로버 만들기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: 'Jua', sans-serif;
+            touch-action: none;
+            background-color: #f0fdf4;
+        }
+        .game-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        #game-board-container {
+            position: relative;
+            padding: 0.5rem;
+            border: 5px solid #65a30d;
+            border-radius: 16px;
+            background-color: #dcfce7;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            /* Let JS control the size */
+        }
+        #game-board {
+            display: grid;
+            user-select: none;
+        }
+        .clover-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background-color: rgba(255, 255, 255, 0.5);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+        .clover-cell.selected {
+            background-color: #fef9c3;
+            transform: scale(0.9);
+        }
+        .clover-cell svg {
+            width: 90%;
+            height: 90%;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.2));
+            pointer-events: none;
+        }
+        #selection-box {
+            position: absolute;
+            background-color: rgba(132, 204, 22, 0.3);
+            border: 2px solid #65a30d;
+            border-radius: 8px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #sum-display {
+            position: absolute;
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 1.25rem;
+            pointer-events: none;
+            z-index: 11;
+            transform: translate(-50%, -120%);
+        }
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            display: flex; justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-box {
+            background-color: white; padding: 2rem; border-radius: 20px; text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            animation: pop-in 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            max-width: 90vw;
+        }
+        @keyframes pop-in {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .modal-button {
+            margin-top: 1.5rem; padding: 0.75rem 2rem; font-size: 1.25rem;
+            border-radius: 10px; background-color: #84cc16; color: white;
+            border: none; cursor: pointer; transition: background-color 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-wrapper">
+        <div class="w-full" id="header-container" style="max-width: 500px; margin-bottom: 1rem;">
+             <div class="w-full p-4 bg-lime-700 text-white rounded-2xl shadow-lg flex justify-between items-center">
+                <h1 class="text-base sm:text-2xl">🍀 네잎클로버 합치기</h1>
+                <div class="flex items-center gap-4 sm:gap-6 text-base sm:text-2xl">
+                    <div>점수: <span id="score">0</span></div>
+                    <div>시간: <span id="timer">60</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-board-container">
+            <div id="game-board"></div>
+            <div id="selection-box" class="hidden"></div>
+            <div id="sum-display" class="hidden">0</div>
+        </div>
+
+        <div id="start-modal" class="modal">
+            <div class="modal-box">
+                <h2 class="text-3xl sm:text-4xl font-bold text-gray-800">새로운 규칙!</h2>
+                <p class="text-gray-600 mt-4 text-md sm:text-lg">
+                    사각형 영역을 드래그해서 클로버 잎의 합이 <br>
+                    <span class="text-lime-600 font-bold text-xl">정확히 4</span>가 되도록 만들어보세요!
+                </p>
+                <button id="start-button" class="modal-button" onclick="initializeGame()">게임 시작</button>
+            </div>
+        </div>
+
+        <div id="game-over-modal" class="modal hidden">
+             <div class="modal-box">
+                <h2 class="text-4xl font-bold text-gray-800">시간 종료!</h2>
+                <p class="text-gray-600 mt-2 text-2xl">최종 점수: <span id="final-score">0</span></p>
+                <button id="restart-button" class="modal-button">다시 하기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventListenersAttached = false;
+
+        function initializeGame() {
+            const gameBoardContainer = document.getElementById('game-board-container');
+            const gameBoard = document.getElementById('game-board');
+            const scoreEl = document.getElementById('score');
+            const timerEl = document.getElementById('timer');
+            const startModal = document.getElementById('start-modal');
+            const gameOverModal = document.getElementById('game-over-modal');
+            const restartButton = document.getElementById('restart-button');
+            const finalScoreEl = document.getElementById('final-score');
+            const selectionBox = document.getElementById('selection-box');
+            const sumDisplay = document.getElementById('sum-display');
+
+            const GRID_SIZE = 8;
+            const INITIAL_TIME = 60;
+            
+            let CELL_SIZE = 50;
+            let GAP_SIZE = 8;
+
+            let grid = [];
+            let score = 0;
+            let timeLeft = INITIAL_TIME;
+            let timerInterval = null;
+            let fourLeafsMadeCount = 0;
+            let isDragging = false;
+            let startCoords = { x: 0, y: 0 };
+            let selectedCells = [];
+
+            // *** FINAL RESPONSIVE FIX ***
+            function setupDimensions() {
+                const wrapper = document.querySelector('.game-wrapper');
+                const header = document.getElementById('header-container');
+                const vh = window.innerHeight;
+                const vw = window.innerWidth;
+                
+                // Determine the maximum possible size for the board
+                const headerHeight = header.offsetHeight + 16; // 1rem margin
+                const availableHeight = vh - headerHeight - 32; // 2rem padding
+                const availableWidth = vw - 32; // 2rem padding
+                
+                // The board will be a square, so its size is limited by the smaller dimension
+                const maxBoardSize = Math.min(availableHeight, availableWidth, 500); // Max width 500px
+
+                gameBoardContainer.style.width = `${maxBoardSize}px`;
+                gameBoardContainer.style.height = `${maxBoardSize}px`;
+
+                const containerPadding = parseFloat(getComputedStyle(gameBoardContainer).paddingLeft) * 2;
+                const boardContentArea = maxBoardSize - containerPadding;
+
+                GAP_SIZE = boardContentArea * 0.02; 
+                CELL_SIZE = (boardContentArea - (GAP_SIZE * (GRID_SIZE - 1))) / GRID_SIZE;
+            }
+
+            function createCloverSVG(leafCount) {
+                const leafColor = "#22c55e", stemColor = "#166534", center = 25;
+                let paths = '';
+                const leafPath = `M${center},${center-12} C${center-10},${center-20} ${center-12},${center} ${center},${center} C${center+12},${center} ${center+10},${center-20} ${center},${center-12} Z`;
+                if (leafCount === 1) paths = `<g transform="rotate(0 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g>`;
+                else if (leafCount === 2) paths = `<g transform="rotate(-45 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g><g transform="rotate(45 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g>`;
+                else if (leafCount === 3) paths = `<g transform="rotate(0 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g><g transform="rotate(120 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g><g transform="rotate(240 ${center} ${center})"><path d="${leafPath}" fill="${leafColor}"/></g>`;
+                const stem = `<line x1="${center}" y1="${center+2}" x2="${center}" y2="${center+20}" stroke="${stemColor}" stroke-width="3" stroke-linecap="round"/>`;
+                return `<svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">${paths}${stem}</svg>`;
+            }
+
+            function generateBoard() {
+                grid = [];
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    grid[r] = [];
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        grid[r][c] = Math.floor(Math.random() * 3) + 1;
+                    }
+                }
+                renderBoard();
+            }
+
+            function renderBoard() {
+                gameBoard.innerHTML = '';
+                gameBoard.style.gridTemplateColumns = `repeat(${GRID_SIZE}, ${CELL_SIZE}px)`;
+                gameBoard.style.gap = `${GAP_SIZE}px`;
+
+                grid.forEach((row, r) => {
+                    row.forEach((cellType, c) => {
+                        const cell = document.createElement('div');
+                        cell.classList.add('clover-cell');
+                        cell.style.width = `${CELL_SIZE}px`;
+                        cell.style.height = `${CELL_SIZE}px`;
+                        cell.dataset.r = r;
+                        cell.dataset.c = c;
+                        if (cellType > 0) cell.innerHTML = createCloverSVG(cellType);
+                        gameBoard.appendChild(cell);
+                    });
+                });
+            }
+
+            function handleDragStart(e) {
+                if (timerInterval === null) return;
+                isDragging = true;
+                const boardRect = gameBoard.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                startCoords = { x: clientX - boardRect.left, y: clientY - boardRect.top };
+                selectionBox.style.left = `${startCoords.x}px`;
+                selectionBox.style.top = `${startCoords.y}px`;
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                selectionBox.classList.remove('hidden');
+                sumDisplay.classList.remove('hidden');
+                e.preventDefault();
+            }
+
+            function handleDragMove(e) {
+                if (!isDragging) return;
+                const boardRect = gameBoard.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const currentX = clientX - boardRect.left;
+                const currentY = clientY - boardRect.top;
+                const x = Math.min(startCoords.x, currentX);
+                const y = Math.min(startCoords.y, currentY);
+                const width = Math.abs(currentX - startCoords.x);
+                const height = Math.abs(currentY - startCoords.y);
+                selectionBox.style.left = `${x}px`;
+                selectionBox.style.top = `${y}px`;
+                selectionBox.style.width = `${width}px`;
+                selectionBox.style.height = `${height}px`;
+                updateSelection(x, y, width, height);
+                sumDisplay.style.left = `${currentX}px`;
+                sumDisplay.style.top = `${currentY}px`;
+            }
+
+            function handleDragEnd() {
+                if (!isDragging) return;
+                isDragging = false;
+                selectionBox.classList.add('hidden');
+                sumDisplay.classList.add('hidden');
+                const sum = selectedCells.reduce((acc, {r, c}) => acc + grid[r][c], 0);
+                if (sum === 4) {
+                    succeed();
+                } else {
+                    fail();
+                }
+            }
+
+            function updateSelection(x, y, width, height) {
+                let currentSum = 0;
+                selectedCells = [];
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        const cellEl = gameBoard.children[r * GRID_SIZE + c];
+                        const cellX = c * (CELL_SIZE + GAP_SIZE);
+                        const cellY = r * (CELL_SIZE + GAP_SIZE);
+                        if (x < cellX + CELL_SIZE && x + width > cellX && y < cellY + CELL_SIZE && y + height > cellY) {
+                            if(grid[r][c] > 0) {
+                                selectedCells.push({ r, c });
+                                currentSum += grid[r][c];
+                            }
+                            cellEl.classList.add('selected');
+                        } else {
+                            cellEl.classList.remove('selected');
+                        }
+                    }
+                }
+                sumDisplay.textContent = currentSum;
+                sumDisplay.style.color = currentSum === 4 ? '#a3e635' : 'white';
+            }
+
+            function succeed() {
+                const cellsToRefill = [...selectedCells];
+                cellsToRefill.forEach(({r, c}) => {
+                    grid[r][c] = 0;
+                    const cellEl = gameBoard.children[r * GRID_SIZE + c];
+                    if (cellEl) cellEl.innerHTML = '';
+                });
+                score++;
+                scoreEl.textContent = score;
+                fourLeafsMadeCount++;
+                if (fourLeafsMadeCount > 0 && fourLeafsMadeCount % 4 === 0) {
+                    timeLeft += 5;
+                    timerEl.style.color = '#a3e635';
+                    setTimeout(() => { if(timerEl) timerEl.style.color = 'white'; }, 500);
+                }
+                cellsToRefill.forEach(cell => {
+                    const randomDelay = getWeightedRandomDelay();
+                    setTimeout(() => {
+                        refillSingleClover(cell);
+                    }, randomDelay);
+                });
+            }
+            
+            function fail() {
+                Array.from(gameBoard.children).forEach(c => c.classList.remove('selected'));
+                selectedCells = [];
+            }
+            
+            function getWeightedRandomDelay() {
+                const rand = Math.random() * 100;
+                if (rand < 5) return 3000;
+                if (rand < 15) return 4000;
+                if (rand < 35) return 5000;
+                if (rand < 65) return 6000;
+                if (rand < 85) return 7000;
+                if (rand < 95) return 8000;
+                if (rand < 99) return 9000;
+                return 10000;
+            }
+
+            function refillSingleClover(cell) {
+                const { r, c } = cell;
+                if (grid[r][c] === 0) {
+                    grid[r][c] = Math.floor(Math.random() * 3) + 1;
+                    const cellEl = gameBoard.children[r * GRID_SIZE + c];
+                    if (cellEl) {
+                        cellEl.innerHTML = createCloverSVG(grid[r][c]);
+                    }
+                }
+            }
+            
+            function startGame() {
+                startModal.classList.add('hidden');
+                gameOverModal.classList.add('hidden');
+                score = 0;
+                timeLeft = INITIAL_TIME;
+                fourLeafsMadeCount = 0;
+                scoreEl.textContent = score;
+                timerEl.textContent = timeLeft;
+                
+                setupDimensions();
+                generateBoard();
+
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    timeLeft--;
+                    timerEl.textContent = timeLeft;
+                    if (timeLeft <= 0) endGame();
+                }, 1000);
+            }
+
+            function endGame() {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                isDragging = false;
+                finalScoreEl.textContent = score;
+                gameOverModal.classList.remove('hidden');
+            }
+
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
+            
+            if (!eventListenersAttached) {
+                restartButton.onclick = startGame;
+                gameBoardContainer.addEventListener('mousedown', handleDragStart);
+                document.addEventListener('mousemove', handleDragMove);
+                document.addEventListener('mouseup', handleDragEnd);
+                gameBoardContainer.addEventListener('touchstart', handleDragStart, { passive: false });
+                document.addEventListener('touchmove', handleDragMove, { passive: false });
+                document.addEventListener('touchend', handleDragEnd);
+                document.addEventListener('mouseleave', handleDragEnd);
+                
+                window.addEventListener('resize', debounce(() => {
+                    setupDimensions();
+                    renderBoard();
+                }, 250));
+
+                eventListenersAttached = true;
+            }
+            
+            startGame();
+        }
+    </script>
+</body>
+</html>
+
