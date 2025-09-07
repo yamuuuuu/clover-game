@@ -1,0 +1,2 @@
+# clover-game
+clover make
